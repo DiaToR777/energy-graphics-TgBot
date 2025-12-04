@@ -1,4 +1,6 @@
-﻿using Telegram.Bot;
+﻿using System.Collections.Concurrent;
+using System.Linq.Expressions;
+using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -6,17 +8,35 @@ using Telegram.Bot.Types.Enums;
 class Program
 {
     static TelegramBotClient bot;
-    static HttpClient http = new();
+    static HttpClient http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(5)
+    };
 
-    const long LOG_CHAT_ID = 5738366583;
+    static long adminId;
 
     const string BASE_URL = "https://raw.githubusercontent.com/DiaToR777/energy-graphics-bot/main/Parser/graphics/";
+
+    static readonly ConcurrentDictionary<long, DateTime> LastRequestTimes = new();
+    const int RATE_LIMIT_SECONDS = 30;
+
+    static string? CachedUpdateTime = null;
+    static DateTime LastUpdateFetchTime = DateTime.MinValue;
+    static readonly TimeSpan UpdateCacheLifetime = TimeSpan.FromSeconds(1200);
+    static readonly SemaphoreSlim cacheLock = new(1, 1);  // ← додаємо семафор
+
+
+
+
+
     static async Task Main()
     {
-        // Токен з environment variable (для Railway)
+        var AdminIdStr = Environment.GetEnvironmentVariable("ADMIN_TG_ID");
+
+        adminId = long.Parse(AdminIdStr);
+
         var token = Environment.GetEnvironmentVariable("BOT_TOKEN");
         bot = new TelegramBotClient(token!);
-
 
 
         var me = await bot.GetMe();
@@ -33,6 +53,12 @@ class Program
 
         Console.WriteLine("Бот працює. Ctrl+C для зупинки");
 
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
         // Чекаємо безкінечно
         await Task.Delay(-1, cts.Token);
     }
@@ -45,13 +71,30 @@ class Program
         var userName = update.Message.Chat.FirstName ?? "User";
 
         Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] {userName}: {text}");
+        if (text == "/help")
+        {
+            await bot.SendMessage(chatId, "Вас вітає GrafikSvitlaBot!\n" +
+                "Команда /start або /grafik відправить актуальний графік відключення світла\n ");
+            return;
+        }
 
+
+
+        // Оновлюємо час останнього запиту для цього користувача
         if (text == "/start" || text == "/grafik")
         {
+            var currentTime = DateTime.UtcNow;
+            if (LastRequestTimes.TryGetValue(chatId, out var lastTime) &&
+                currentTime - lastTime < TimeSpan.FromSeconds(RATE_LIMIT_SECONDS))
+            {
+                await bot.SendMessage(chatId, "⏳ Зачекай... 30секунд перед відправкою наступного запиту");
+                return;
+            }
+
+            LastRequestTimes[chatId] = currentTime;
             await SendGraphics(chatId, ct);
         }
     }
-
     static async Task SendGraphics(long chatId, CancellationToken ct)
     {
         try
@@ -59,16 +102,7 @@ class Program
             await bot.SendMessage(chatId, "⏳ Завантажую графіки...", cancellationToken: ct);
 
             // Читаємо час оновлення
-            string updateTime;
-            try
-            {
-                updateTime = await http.GetStringAsync(BASE_URL + "last_update.txt", ct);
-
-            }
-            catch
-            {
-                updateTime = "невідомо";
-            }
+            string updateTime = await GetCachedUpdateTime(ct);
 
             int sentCount = 0;
 
@@ -94,7 +128,6 @@ class Program
                 }
                 catch (HttpRequestException)
                 {
-                    // Файл не існує - це нормально
                     break;
                 }
             }
@@ -123,10 +156,10 @@ class Program
             var logMessage = $"🚨 КРИТИЧНИЙ ЗБІЙ у SendGraphics!\n" +
                              $"Користувач: {chatId}\n" +
                              $"Помилка: **{ex.Message}**\n" +
-                             $"Стек: ```{ex.StackTrace?[..300]}...```"; // Обмежуємо стек для ТГ
+                             $"Стек: ```{ex.StackTrace ?? "Немає"}...```"; // Обмежуємо стек для ТГ
 
             await bot.SendMessage(
-                chatId: LOG_CHAT_ID,
+                chatId: adminId,
                 text: logMessage,
                 parseMode: ParseMode.Markdown,
                 cancellationToken: ct
@@ -141,13 +174,51 @@ class Program
         // Надсилаємо повідомлення про помилку полінгу розробнику
         var logMessage = $"⛔️ ПОМИЛКА ПОЛІНГУ! Бот може бути нестабільним.\n" +
                          $"Помилка: **{ex.Message}**\n" +
-                         $"Стек: ```{ex.StackTrace?[..300]}...```";
+                         $"Стек: ```{ex.StackTrace ?? "Стеку немає"}...```";
 
         await bot.SendMessage(
-            chatId: LOG_CHAT_ID,
+            chatId: adminId,
             text: logMessage,
             parseMode: ParseMode.Markdown,
             cancellationToken: ct
         );
+    }
+    static async Task<string> GetCachedUpdateTime(CancellationToken ct)
+    {
+        // Швидка перевірка без блокування (double-checked locking)
+        if (CachedUpdateTime != null &&
+            DateTime.UtcNow - LastUpdateFetchTime < UpdateCacheLifetime)
+        {
+            return CachedUpdateTime;
+        }
+
+        // Блокуємо — тільки 1 потік може завантажувати
+        await cacheLock.WaitAsync(ct);
+        try
+        {
+            // Перевіряємо ще раз — може інший потік вже завантажив
+            if (CachedUpdateTime != null &&
+                DateTime.UtcNow - LastUpdateFetchTime < UpdateCacheLifetime)
+            {
+                return CachedUpdateTime;
+            }
+
+            // Завантажуємо
+            try
+            {
+                CachedUpdateTime = await http.GetStringAsync(BASE_URL + "last_update.txt", ct);
+            }
+            catch
+            {
+                CachedUpdateTime = "невідомо";
+            }
+
+            LastUpdateFetchTime = DateTime.UtcNow;
+            return CachedUpdateTime;
+        }
+        finally
+        {
+            cacheLock.Release();  // ← завжди звільняємо
+        }
     }
 }
