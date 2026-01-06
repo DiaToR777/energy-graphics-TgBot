@@ -19,7 +19,7 @@ public class TelegramService
     {
         var token = Environment.GetEnvironmentVariable("BOT_TOKEN");
         _bot = new TelegramBotClient(token!);
-        var AdminIdStr = Environment.GetEnvironmentVariable("ADMIN_TG_ID!");
+        var AdminIdStr = Environment.GetEnvironmentVariable("ADMIN_TG_ID");
         _adminId = long.Parse(AdminIdStr!);
 
         graphicsService = new(http);
