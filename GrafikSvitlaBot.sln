@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36518.9 d17.14
+VisualStudioVersion = 17.14.36518.9
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GrafikSvitlaBot", "GrafikSvitlaBot\GrafikSvitlaBot.csproj", "{3D8D74B9-041B-4E88-AF6B-860BE83E8215}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphicsServiceTests", "GraphicsServiceTests\GraphicsServiceTests.csproj", "{59D1ADF9-5CFA-4981-AD2F-0F36407867A8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{3D8D74B9-041B-4E88-AF6B-860BE83E8215}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3D8D74B9-041B-4E88-AF6B-860BE83E8215}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3D8D74B9-041B-4E88-AF6B-860BE83E8215}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59D1ADF9-5CFA-4981-AD2F-0F36407867A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59D1ADF9-5CFA-4981-AD2F-0F36407867A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59D1ADF9-5CFA-4981-AD2F-0F36407867A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59D1ADF9-5CFA-4981-AD2F-0F36407867A8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
