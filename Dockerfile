@@ -1,26 +1,22 @@
-# --- ЕТАП ЗБІРКИ (Використовуємо образ з SDK для компіляції) ---
+# Використовуємо SDK для збірки
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Копіюємо файли рішення та проєкту
-COPY *.sln ./
-COPY GrafikSvitlaBot/GrafikSvitlaBot.csproj GrafikSvitlaBot/
+# Копіюємо ТІЛЬКИ файл проекту бота (ігноруємо .sln, щоб не тягнути тести)
+COPY ["GrafikSvitlaBot/GrafikSvitlaBot.csproj", "GrafikSvitlaBot/"]
 
-# Відновлюємо залежності
-RUN dotnet restore
+# Відновлюємо залежності тільки для цього проекту
+RUN dotnet restore "GrafikSvitlaBot/GrafikSvitlaBot.csproj"
 
-# Копіюємо решту файлів та публікуємо
+# Копіюємо всі інші файли
 COPY . .
-WORKDIR /src/GrafikSvitlaBot
-# Публікуємо в папку /app/publish
-RUN dotnet publish -c Release -o /app/publish --no-restore
 
-# --- ЕТАП ЗАПУСКУ (Використовуємо менший образ для виконання) ---
+# Переходимо в папку бота і публікуємо
+WORKDIR "/src/GrafikSvitlaBot"
+RUN dotnet publish "GrafikSvitlaBot.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Фінальний образ (легкий)
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
-
-# Копіюємо опублікований додаток
 COPY --from=build /app/publish .
-
-# Визначаємо точку входу
 ENTRYPOINT ["dotnet", "GrafikSvitlaBot.dll"]
